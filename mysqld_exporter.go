@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"github.com/prometheus/mysqld_exporter/metrics"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -40,6 +41,21 @@ import (
 	"gopkg.in/ini.v1"
 
 	"github.com/prometheus/mysqld_exporter/collector"
+)
+
+const (
+	//Pod name
+	podName = "POD_NAME"
+	//resource id
+	resourceId = "RESOURCE_ID"
+	//Instance Name
+	serviceInstanceName = "INSTANCE_NAME"
+	//Name space
+	podNameSpace = "NAMESPACE"
+	//prometheus host
+	prometheusHost = "PROMETHEUS_HOST"
+	//prometheus port
+	prometheusPort = "PROMETHEUS_PORT"
 )
 
 var (
@@ -299,7 +315,30 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write(landingPage)
 	})
+	resourceId := os.Getenv(resourceId)
+	pod := os.Getenv(podName)
+	k8sNameSpace := os.Getenv(podNameSpace)
+	instanceName := os.Getenv(serviceInstanceName)
+	promHost := os.Getenv(prometheusHost)
+	promPort := os.Getenv(prometheusPort)
+	promClient := metrics.NewClient(promHost, promPort)
+	cpuCollector := metrics.NewCPUUsageCollector(promClient, pod, instanceName, k8sNameSpace, resourceId, logger)
+	prometheus.MustRegister(cpuCollector)
 
+	diskUsageCollector := metrics.NewDiskUsageCollector(promClient, pod, instanceName, k8sNameSpace, logger)
+	prometheus.MustRegister(diskUsageCollector)
+
+	memoryUsageCollector := metrics.NewMemoryUsageCollector(promClient, pod, instanceName, k8sNameSpace, resourceId, logger)
+	prometheus.MustRegister(memoryUsageCollector)
+
+	readIopsCollector := metrics.NewReadIopsCollector(promClient, pod, instanceName, k8sNameSpace, logger)
+	prometheus.MustRegister(readIopsCollector)
+
+	writeIopsCollector := metrics.NewWriteiopsCollector(promClient, pod, instanceName, k8sNameSpace, logger)
+	prometheus.MustRegister(writeIopsCollector)
+
+	connectionCollector := metrics.NewConnectionCollector(promClient, instanceName, k8sNameSpace,resourceId, logger)
+	prometheus.MustRegister(connectionCollector)
 	level.Info(logger).Log("msg", "Listening on address", "address", *listenAddress)
 	srv := &http.Server{Addr: *listenAddress}
 	if err := web.ListenAndServe(srv, *webConfig, logger); err != nil {
